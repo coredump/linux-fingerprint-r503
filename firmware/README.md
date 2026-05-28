@@ -1,6 +1,6 @@
 # Firmware
 
-Arduino sketches for the R503 + Nano bridge.
+Arduino sketches for the R503 + D1 Mini (ESP8266) bridge.
 
 ## Sketches
 
@@ -27,33 +27,26 @@ Arduino sketches for the R503 + Nano bridge.
 
 ```bash
 # One-time setup:
-arduino-cli core install arduino:avr
+arduino-cli config add board_manager.additional_urls \
+    https://arduino.esp8266.com/stable/package_esp8266com_index.json
+arduino-cli core update-index
+arduino-cli core install esp8266:esp8266
 arduino-cli lib install "Adafruit Fingerprint Sensor Library"
+arduino-cli lib install "EspSoftwareSerial"
 ```
 
 ## Build + flash
 
-The right `cpu=` variant depends on which bootloader is burned on your Nano.
-
-| Bootloader | Baud rate | FQBN variant | Common origin |
-|---|---|---|---|
-| Optiboot (modern) | 115200 | `arduino:avr:nano:cpu=atmega328` | Most current Elegoo / Sunfounder / WAVGAT Nano clones, official Arduino Nano "Every" |
-| ATmegaBOOT (legacy) | 57600 | `arduino:avr:nano:cpu=atmega328old` | Older Nano clones, some refurbished units |
-
-If you don't know which yours is, try `atmega328` first — modern clones are
-overwhelmingly the common case. If you see `avrdude: stk500_recv(): programmer is not responding`
-or `not in sync: resp=0x7e`, swap to `atmega328old` and try again.
-
 ```bash
 # Compile
-arduino-cli compile --fqbn arduino:avr:nano:cpu=atmega328 firmware/r503fp/
+arduino-cli compile --fqbn esp8266:esp8266:d1_mini firmware/r503fp/
 
-# Find the port (CH340 clones enumerate as ttyUSB; FTDI / Arduino-genuine as ttyACM)
+# Find the port (D1 Mini CH340 enumerates as ttyUSB)
 arduino-cli board list
 
 # Flash (replace /dev/ttyUSB0 with whatever showed up)
 arduino-cli upload \
-  --fqbn arduino:avr:nano:cpu=atmega328 \
+  --fqbn esp8266:esp8266:d1_mini \
   --port /dev/ttyUSB0 \
   firmware/r503fp/
 ```
@@ -70,10 +63,10 @@ applies to `/dev/r503` once the daemon is installed — flashing or opening a
 serial monitor on it requires `sudo` (and stopping `r503d` first, since the
 daemon holds the port exclusively with `TIOCEXCL`).
 
-**EEPROM persists across reflash.** The 16-byte key + counter ring + format
-marker live in the ATmega328P's 1 KB EEPROM, which `arduino-cli upload`
-does not touch. A paired Nano stays paired after you reflash `r503fp/`.
-To clear pairing without the host key, use `r503fp_wipe/`.
+**Emulated EEPROM persists across reflash.** The 16-byte key + counter ring +
+format marker live in the ESP8266's emulated EEPROM (a flash sector), which
+`arduino-cli upload` does not erase. A paired D1 Mini stays paired after you
+reflash `r503fp/`. To clear pairing without the host key, use `r503fp_wipe/`.
 
 ## Serial monitor
 
@@ -84,8 +77,8 @@ tio -b 115200 /dev/r503
 # Type `status`           — expect `OK paired=<bool> counter=<N> fmt=2 fw=1.0`.
 ```
 
-Both of those work even on a paired Nano without sending a MAC; everything
+Both of those work even on a paired D1 Mini without sending a MAC; everything
 else requires the daemon's framed wire format (SPEC §13.3) or an unpaired
-Nano. The framed commands look like `C 42 verify 0 M 9f3a1c4d2b7e5601` —
+D1 Mini. The framed commands look like `C 42 verify 0 M 9f3a1c4d2b7e5601` —
 you wouldn't usually type those by hand. Stop `r503d` first if you want
 exclusive access to the port for manual prodding.

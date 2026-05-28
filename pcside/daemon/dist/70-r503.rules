@@ -1,8 +1,9 @@
 # /etc/udev/rules.d/70-r503.rules
 #
-# Map any common Arduino-compatible USB-serial device to a stable
-# `/dev/r503` symlink so r503d binds to the same path regardless of which
-# /dev/ttyACM*/ttyUSB* slot the kernel assigned this boot.
+# Map the WeMos D1 Mini (ESP8266, CH340 USB-serial) to a stable `/dev/r503`
+# symlink so r503d binds to the same path regardless of which /dev/ttyUSB*
+# slot the kernel assigned this boot. Also covers common clone USB-serial
+# chips that may appear on other D1 Mini variants.
 #
 # If you have MULTIPLE matching devices plugged in, only one wins the
 # symlink (the most-recently-attached one). For deterministic binding in

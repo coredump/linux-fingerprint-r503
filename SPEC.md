@@ -1,7 +1,7 @@
 # R503 + Arduino Nano → Linux Fingerprint Login — Project Specification (v2)
 
 **Target platform:** Fedora Workstation / KDE Spin, KDE Plasma desktop, x86_64
-**Hardware:** Grow R503 capacitive fingerprint sensor + Arduino Nano (ATmega328P) bridge
+**Hardware:** Grow R503 capacitive fingerprint sensor + WeMos D1 Mini (ESP8266MOD) bridge
 **Goal:** A working desktop fingerprint reader for KDE Plasma — using parts on hand and a publicly documented sensor, with the work split cleanly into firmware, PC-side tooling, libfprint integration, and desktop wiring.
 
 This is the spec v2. It supersedes v1 (Serounder/TE-FPA2 reverse-engineering plan). The architecture is now:
@@ -35,55 +35,54 @@ The cost of this approach is that we're walking a path no libfprint driver has w
 
 ## 2. Bill of Materials
 
-**On hand (per user):**
-- Arduino Nano (ATmega328P, CH340 or FT232 USB-serial chip) — at least one to dedicate
-- Arduino Uno R3 — backup; identical MCU, same firmware works
-- Dupont jumper wires, breadboard, miscellaneous parts
+**Required:**
+- WeMos D1 Mini (ESP8266MOD, CH340 USB-serial chip) — or any compatible D1 Mini clone
+- Grow R503 capacitive fingerprint sensor (round, ~28mm, RGB LED ring, MX1.0-6P connector)
+- 6× Dupont jumper wires
 
-**Ordered:**
-- Grow R503 capacitive fingerprint sensor (round, ~28mm, RGB LED ring)
+**Connector note:** The R503 ships with an MX1.0-6P (JST MX 1.0mm pitch, 6-pin) pigtail.
+A 6-pin MX1.0-to-Dupont adapter is easiest; alternatively, push-fit Dupont pins directly
+into the MX housing if the pitch permits, or solder wires to the pigtail ends.
 
-**Likely needed, confirm against parts bin:**
-- 2× resistors for a voltage divider on the Nano TX → R503 RX line (1kΩ and 2kΩ work cleanly to drop 5V to 3.3V), **or** a logic level converter board, **or** a 3.3V Arduino variant
-- 6-pin JST-SH-to-Dupont pigtail **if** the R503 ships with the JST connector rather than bare flying leads (varies by seller)
-- USB-A-to-Mini-B or USB-A-to-Micro-B cable (depends on Nano variant — check before Saturday)
+**No level shifter, no voltage divider needed.** The D1 Mini runs at 3.3V; the R503 is
+natively 3.3V. All signals are direct connections.
 
 **Nice to have, not blocking:**
-- A small project box or 3D-printed enclosure for the R503 + Nano
-- A short piece of double-sided tape to anchor the unit to the desk
+- A small project box or 3D-printed enclosure for the R503 + D1 Mini
+- USB-A-to-Micro-B cable for the D1 Mini
 
 ---
 
 ## 3. R503 Pinout and Wiring
 
-The R503 has six wires. Color codes are standard across most sellers but **verify against the datasheet that came with the unit** — counterfeit modules occasionally rewire colors.
+The R503 has a 6-wire MX1.0-6P pigtail. Wire colors are consistent across most sellers
+but **verify against the connector pin numbers** — the MX1.0 housing labels pin 1 on the
+tab side.
 
-**Corrected pinout per the actual Grow R503 datasheet** (verified empirically 2026-05-24 with Mat's unit):
+**Pinout (per Grow R503 datasheet, confirmed empirically):**
 
-| Wire color | Function | Connect to |
-|---|---|---|
-| Red | VCC (3.3V, sensor main power / V_main) | Uno/Nano `3V3` pin |
-| Black | GND | `GND` |
-| Yellow | TXD (sensor → MCU, 3.3V TTL output) | `D2` (SoftwareSerial RX) |
-| Brown (sometimes green per seller) | RXD (MCU → sensor, **5V-tolerant in practice**) | `D3` (SoftwareSerial TX) **— direct, no divider** |
-| Blue | WAKEUP (finger detection — **active-LOW**: idle 3.3V, finger 0V) | `D4` (digital input, optional) |
-| White | 3.3VT (touch induction power, DC 3-6V, 5µA, autonomous always-on touch IC supply) | `3V3` pin (shares rail with red) |
+| Pin | Wire color | Function | Connect to |
+|---|---|---|---|
+| 1 | Red | VCC (3.3V, sensor main power) | D1 Mini `3V3` |
+| 2 | Black | GND | D1 Mini `GND` |
+| 3 | Yellow | TXD (sensor → MCU, 3.3V TTL) | D1 Mini `D5` (GPIO14, SoftwareSerial RX) |
+| 4 | Brown (sometimes green per seller) | RXD (MCU → sensor, 3.3V TTL) | D1 Mini `D6` (GPIO12, SoftwareSerial TX) |
+| 5 | Blue | WAKEUP (finger detection, active-LOW) | D1 Mini `D2` (GPIO4, digital input, optional) |
+| 6 | White | 3.3VT (touch-IC supply, 3–6V, 5µA) | D1 Mini `3V3` (shares rail with pin 1) |
 
-### 3.1 No voltage divider on the TX line — connect directly
+All connections are **direct** — no voltage divider, no level shifter. Both the D1 Mini
+and the R503 operate at 3.3V.
 
-**The R503's RX input is 5V-tolerant in practice, despite the datasheet specifying "3.3V TTL logic level".** Earlier versions of this spec called for a 1kΩ/2kΩ divider to drop 5V to 3.3V. That divider WILL NOT WORK with this sensor — the R503's RX has an internal pullup strong enough to fight the divider, leaving the line stuck above the LOW threshold so the sensor never registers valid UART start bits.
+### 3.1 Why SoftwareSerial on D5/D6 and not the D1 Mini's hardware UART
 
-**Symptom of the divider problem:** sensor sends `0x55` handshake on power-up (proving TX is alive) but never responds to any command. Easy to misdiagnose as a dead MCU.
+The D1 Mini's UART0 (default pins) is shared with the USB-to-serial chip (CH340). Putting
+the R503 on UART0 would mix host serial traffic with sensor bytes. `Serial1` (UART1) on
+the ESP8266 is TX-only (GPIO2/D4), so it can't receive from the sensor either.
 
-**Fix:** connect brown (or green) **directly** to the Uno/Nano TX pin. No resistors in path. Matches how every working R503 + Arduino tutorial wires it.
-
-The sensor's TX (yellow → `D2`) is 3.3V TTL out, comfortably above Uno's ~2.5V HIGH threshold, so it's read correctly without shifting.
-
-### 3.2 Why SoftwareSerial on D2/D3 and not the Nano's hardware UART
-
-The Nano's hardware UART (D0/D1) is shared with the USB-to-serial chip. If you use D0/D1 for the R503, every byte you print to `Serial` on the PC side leaks into the R503's mouth, and every byte from the R503 leaks into your console. Use `SoftwareSerial` on D2/D3 for the sensor, and keep the hardware `Serial` (USB) reserved for talking to the PC.
-
-The R503's default baud is 57600. SoftwareSerial on a 16MHz Nano handles 57600 reliably; if you see corruption, drop the sensor to 9600 with a one-time `setBaud` command.
+Solution: **EspSoftwareSerial** on D5 (GPIO14, RX) and D6 (GPIO12, TX). These are clean
+GPIOs with no boot-mode constraints, and EspSoftwareSerial at 57600 baud on an 80 MHz
+ESP8266 is reliable. The hardware `Serial` (UART0 via CH340) is reserved for host comms
+at 115200.
 
 ---
 

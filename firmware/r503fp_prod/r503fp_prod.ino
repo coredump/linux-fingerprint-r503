@@ -11,9 +11,12 @@
 
 #include <SoftwareSerial.h>
 
+#define LED_ON  LOW
+#define LED_OFF HIGH
+
 const long PC_BAUD = 115200;
 const long FP_BAUD = 57600;
-SoftwareSerial soft(2, 3);
+SoftwareSerial soft(14, 12); // RX=GPIO14=D5, TX=GPIO12=D6
 
 static const byte verifyPwd[] = {
   0xEF, 0x01,
@@ -48,11 +51,11 @@ void loop() {
   if (soft.available()) {
     Serial.print(F("[unprompted] RX: "));
     while (soft.available()) {
-      digitalWrite(LED_BUILTIN, HIGH);
+      digitalWrite(LED_BUILTIN, LED_ON);
       emitByte((byte)soft.read());
       delay(2); // give SoftSerial a moment to grab any trailing byte
     }
-    digitalWrite(LED_BUILTIN, LOW);
+    digitalWrite(LED_BUILTIN, LED_OFF);
     Serial.println();
   }
 
@@ -73,13 +76,13 @@ void loop() {
   unsigned long deadline = millis() + 1500;
   while (millis() < deadline) {
     if (soft.available()) {
-      digitalWrite(LED_BUILTIN, HIGH);
+      digitalWrite(LED_BUILTIN, LED_ON);
       emitByte((byte)soft.read());
       bytesRx++;
       deadline = millis() + 200; // extend deadline if still receiving
     }
   }
-  digitalWrite(LED_BUILTIN, LOW);
+  digitalWrite(LED_BUILTIN, LED_OFF);
   Serial.println();
   if (bytesRx == 0) {
     Serial.println(F("(no response)"));

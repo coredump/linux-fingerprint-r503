@@ -19,9 +19,6 @@ pub enum FprintError {
     /// No prints enrolled for the requested user / finger.
     NoEnrolledPrints(String),
 
-    /// VerifyStop / EnrollStop with no matching active operation.
-    NoActionInProgress(String),
-
     /// Finger name string not in the fprintd-defined set.
     InvalidFingername(String),
 

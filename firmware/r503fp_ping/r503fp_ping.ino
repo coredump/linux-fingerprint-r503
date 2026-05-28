@@ -1,14 +1,12 @@
-// r503fp_ping.ino — Layer 1 partial: prove the Uno can talk to the R503.
+// r503fp_ping.ino — Layer 1 partial: prove the D1 Mini can talk to the R503.
 //
-// Wiring (Uno R3 + R503, voltage divider on D3):
-//   R503 red    → Uno 3.3V          (Power Supply, sensor main)
-//   R503 black  → Uno GND
-//   R503 yellow → Uno D2            (SoftwareSerial RX; sensor TX, 3.3V TTL)
-//   R503 brown  → Uno D3 via divider (SoftwareSerial TX; sensor RX, 3.3V only)
-//                  D3 ── 1kΩ ──┬── R503 brown
-//                              └── 2kΩ ── GND
-//   R503 blue   → Uno D4            (WAKEUP, HIGH when finger present; optional)
-//   R503 white  → Uno 3.3V          (Touch power, shares rail with red)
+// Wiring (D1 Mini + R503, direct connection — no voltage divider needed at 3.3V):
+//   R503 red    → D1 Mini 3V3       (Power Supply, sensor main)
+//   R503 black  → D1 Mini GND
+//   R503 yellow → D1 Mini D5        (SoftwareSerial RX; sensor TX, 3.3V TTL)
+//   R503 brown  → D1 Mini D6        (SoftwareSerial TX; sensor RX, direct)
+//   R503 blue   → D1 Mini D2        (WAKEUP; optional)
+//   R503 white  → D1 Mini 3V3       (Touch power, shares rail with red)
 //
 // Commands (PC link @ 115200, line-terminated):
 //   info  → query sensor: capacity, enrolled count, system id, security level, device addr
@@ -19,11 +17,14 @@
 #include <SoftwareSerial.h>
 #include <Adafruit_Fingerprint.h>
 
+#define LED_ON  LOW
+#define LED_OFF HIGH
+
 const long PC_BAUD = 115200;
 const long FP_BAUD = 57600;
-const uint8_t PIN_RX   = 2;  // sensor TX (yellow)
-const uint8_t PIN_TX   = 3;  // sensor RX (brown) via voltage divider
-const uint8_t PIN_WAKE = 4;  // sensor WAKEUP (blue)
+const uint8_t PIN_RX   = 14; // GPIO14 = D5, sensor TX (yellow)
+const uint8_t PIN_TX   = 12; // GPIO12 = D6, sensor RX (brown), direct
+const uint8_t PIN_WAKE =  4; // GPIO4  = D2, sensor WAKEUP (blue)
 
 const char BANNER[] = "R503FP READY fw=0.1-ping";
 
@@ -69,7 +70,7 @@ void loop() {
     char c = (char)Serial.read();
     if (c == '\n' || c == '\r') {
       if (inbuf.length() == 0) continue;
-      digitalWrite(LED_BUILTIN, HIGH);
+      digitalWrite(LED_BUILTIN, LED_ON);
       if (inbuf == "info") {
         emitInfo();
       } else if (inbuf == "wake") {
@@ -81,7 +82,7 @@ void loop() {
         Serial.print(F("ERR unknown_command "));
         Serial.println(inbuf);
       }
-      digitalWrite(LED_BUILTIN, LOW);
+      digitalWrite(LED_BUILTIN, LED_OFF);
       inbuf = "";
     } else {
       inbuf += c;

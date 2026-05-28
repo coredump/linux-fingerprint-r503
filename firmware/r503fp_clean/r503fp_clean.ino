@@ -7,8 +7,8 @@
 #include <Adafruit_Fingerprint.h>
 
 const long PC_BAUD = 115200;
-const uint8_t PIN_RX = 2;
-const uint8_t PIN_TX = 3;
+const uint8_t PIN_RX = 14; // GPIO14 = D5
+const uint8_t PIN_TX = 12; // GPIO12 = D6
 
 SoftwareSerial sensorSerial(PIN_RX, PIN_TX);
 Adafruit_Fingerprint finger = Adafruit_Fingerprint(&sensorSerial);
@@ -18,8 +18,8 @@ void setup() {
   while (!Serial) { ; }
 
   // Give the sensor 3 full seconds to power up and stabilize before we
-  // touch anything. The Uno's reset glitches the 3V3 rail briefly, so the
-  // sensor effectively re-boots on every firmware flash.
+  // touch anything. The D1 Mini's reset can briefly glitch the 3V3 rail,
+  // so the sensor may effectively re-boot on every firmware flash.
   Serial.println(F("waiting 3s for sensor boot..."));
   delay(3000);
 

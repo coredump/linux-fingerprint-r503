@@ -1,4 +1,4 @@
-# linux-fingerprint-r503 — fingerprint login for Linux using a Grow R503 + Arduino
+# linux-fingerprint-r503 — fingerprint login for Linux using a Grow R503 + D1 Mini
 
 [![CI](https://github.com/matpb/linux-fingerprint-r503/actions/workflows/ci.yml/badge.svg)](https://github.com/matpb/linux-fingerprint-r503/actions/workflows/ci.yml)
 [![r503d](https://img.shields.io/badge/r503d-1.0.0-success)](pcside/daemon/Cargo.toml)
@@ -49,30 +49,29 @@ to bottom.
 
 | Part | Notes | Approx cost |
 |------|-------|------|
-| Grow R503 capacitive fingerprint sensor | The round one with the RGB ring | ~$10 |
-| Arduino Uno R3 / Nano / Mega / any ATmega328 board | Anything that runs SoftwareSerial | $5–$25 |
-| 4–6 jumper wires | Dupont / breadboard | trivial |
+| Grow R503 capacitive fingerprint sensor | The round one with the RGB ring, MX1.0-6P connector | ~$10 |
+| WeMos D1 Mini (ESP8266MOD) | Any D1 Mini clone with a CH340 works | ~$3–5 |
+| 6× Dupont jumper wires | Or a 6-pin MX1.0-to-Dupont adapter for a cleaner fit | trivial |
 
-That's it. **No level shifter, no voltage divider** — see [`SPEC.md` §3.1](SPEC.md)
-for why (the R503's RX line is 5V-tolerant in practice; the datasheet lies).
+That's it. **No level shifter, no voltage divider** — both the D1 Mini and the R503
+run at 3.3V; all wires connect directly.
 
 ## Wiring
 
 ```
-R503             Arduino (Uno R3 / Nano / etc.)
-----             ------------------------------
-Red (VCC)        3V3
-White (3.3VT)    3V3                  (touch-IC supply; shares rail with red)
-Black (GND)      GND
-Yellow (TXD)     D2  ── SoftwareSerial RX
-Brown (RXD)      D3  ── SoftwareSerial TX   (direct — no divider!)
-Blue (WAKEUP)    D4                          (optional; not used by firmware yet)
+R503 (MX1.0-6P)      D1 Mini (ESP8266)
+---------------      -----------------
+Pin 1  Red (VCC)     3V3
+Pin 2  Black (GND)   GND
+Pin 3  Yellow (TXD)  D5  (GPIO14) ── EspSoftwareSerial RX
+Pin 4  Brown (RXD)   D6  (GPIO12) ── EspSoftwareSerial TX   (direct, 3.3V)
+Pin 5  Blue (WAKEUP) D2  (GPIO4)                            (optional)
+Pin 6  White (3.3VT) 3V3                                    (shares rail with pin 1)
 ```
 
-If your R503 ships with the JST-SH connector, snip a 6-pin JST-SH-to-Dupont
-pigtail to break the wires out. Brown is sometimes green depending on the
-seller — verify against the wire that goes into the RXD pin of the JST
-header, not the colour.
+All connections are direct — no voltage divider, no level shifter. The R503's
+RXD wire is brown on most units but can be green depending on the seller;
+verify against the connector pin number, not the colour.
 
 ## Prerequisites
 
@@ -107,28 +106,25 @@ stick with the default plaintext-key flow.
 
 ### 1. Flash the firmware
 
-Open `firmware/r503fp/r503fp.ino` in the Arduino IDE and upload. Or with
-`arduino-cli`:
+Install the ESP8266 board support and required libraries, then compile and upload:
 
 ```bash
-# Uno R3:
-arduino-cli compile --fqbn arduino:avr:uno firmware/r503fp/
-arduino-cli upload  --fqbn arduino:avr:uno --port /dev/ttyACM0 firmware/r503fp/
+# One-time setup:
+arduino-cli config add board_manager.additional_urls \
+    https://arduino.esp8266.com/stable/package_esp8266com_index.json
+arduino-cli core update-index
+arduino-cli core install esp8266:esp8266
+arduino-cli lib install "Adafruit Fingerprint Sensor Library"
+arduino-cli lib install "EspSoftwareSerial"
 
-# Nano (modern Optiboot, including most Elegoo / WAVGAT clones):
-arduino-cli compile --fqbn arduino:avr:nano:cpu=atmega328 firmware/r503fp/
-arduino-cli upload  --fqbn arduino:avr:nano:cpu=atmega328 --port /dev/ttyUSB0 firmware/r503fp/
-
-# Nano with legacy 57600-baud bootloader (older clones):
-#   replace `cpu=atmega328` with `cpu=atmega328old`
+# Compile + upload to D1 Mini:
+arduino-cli compile --fqbn esp8266:esp8266:d1_mini firmware/r503fp/
+arduino-cli upload  --fqbn esp8266:esp8266:d1_mini --port /dev/ttyUSB0 firmware/r503fp/
 ```
 
-The firmware uses `Adafruit_Fingerprint`. The IDE will offer to install it
-on first compile.
-
-If `arduino-cli upload` fails with `not in sync: resp=0x7e`, your bootloader
-is the other variant — swap `atmega328` ↔ `atmega328old` and retry. Both
-work; the difference is just bootloader baud rate.
+The D1 Mini's CH340 serial chip appears as `/dev/ttyUSB0` (or `ttyUSB1`,
+etc.) on Linux. After the udev rule is installed it is also accessible as
+`/dev/r503` — use that for uploads after install.
 
 ### 2. Build the daemon
 
@@ -155,7 +151,8 @@ That script:
   this closes the default `0660 root:dialout` path so no other local user can
   open the port — security audit 2026-05-28 / H1). **Consequence:** after
   install, any manual `arduino-cli`/serial-monitor command against `/dev/r503`
-  needs `sudo`.
+  needs `sudo`. The D1 Mini (CH340) appears as `/dev/ttyUSB*` without the udev
+  rule and as `/dev/r503` after install.
 - installs the systemd unit (`/etc/systemd/system/r503d.service`)
 - overrides the D-Bus autolaunch entry for `net.reactivated.Fprint`
 - installs the polkit action
@@ -171,9 +168,9 @@ That script:
 It's idempotent — re-run it after every `cargo build --release` to
 redeploy the new binary.
 
-### 4. Pair the Nano with the daemon
+### 4. Pair the D1 Mini with the daemon
 
-A freshly-flashed Nano is unpaired — the daemon would talk to it but the
+A freshly-flashed D1 Mini is unpaired — the daemon would talk to it but the
 firmware would reject every framed command. **Pick one of the two flows
 below**; both end with a paired Nano and a working daemon. The TPM-sealed
 flow is recommended if your host has a TPM2 (see Prerequisites for the
@@ -294,11 +291,11 @@ sudo bash pcside/daemon/dist/reseal-tpm.sh
 ```
 
 The script stops `r503d`, reflashes `firmware/r503fp_wipe/` to wipe the
-Nano EEPROM, reflashes the main firmware, creates `/etc/r503d/allow-pair`,
+D1 Mini's emulated EEPROM, reflashes the main firmware, creates `/etc/r503d/allow-pair`,
 runs `r503d --reseal-tpm` to generate a fresh key sealed to the *current*
 PCR7, and starts the daemon back up. Wall-clock: ~90 seconds. Enrolled
 fingers are preserved — templates live on the R503 sensor's flash, not
-the Nano.
+the D1 Mini.
 
 The script needs `arduino-cli` available. If it's installed in your
 user's `$HOME/.local/bin` it's auto-detected via `$SUDO_USER`; otherwise
@@ -334,9 +331,9 @@ PCR7-changed case above:
 ```bash
 sudo systemctl stop r503d
 # /dev/r503 is root:root 0600 since install (audit H1), so the uploads need root.
-sudo arduino-cli upload --fqbn arduino:avr:nano:cpu=atmega328 --port /dev/r503 firmware/r503fp_wipe/
+sudo arduino-cli upload --fqbn esp8266:esp8266:d1_mini --port /dev/r503 firmware/r503fp_wipe/
 # Wait ~1s for the wipe to complete (LED starts blinking — that's the wipe sketch).
-sudo arduino-cli upload --fqbn arduino:avr:nano:cpu=atmega328 --port /dev/r503 firmware/r503fp/
+sudo arduino-cli upload --fqbn esp8266:esp8266:d1_mini --port /dev/r503 firmware/r503fp/
 sudo touch /etc/r503d/allow-pair
 sudo r503d --pair
 sudo systemctl start r503d
@@ -372,8 +369,8 @@ USB-CDC: `ping`, `info`, `enroll N`, `verify`, `delete N`, `clear`,
 Since `fw=1.0` (Milestone E of the v2 authenticated-channel work), every
 command and response is wrapped in a `C <counter> <body> M <mac>` /
 `R <counter> <seq> <body> M <mac>` frame, MAC'd with SipHash-2-4 over a
-TOFU-paired 128-bit key. The Nano keeps a wear-leveled monotonic counter
-in EEPROM; the daemon keeps a matching counter in `/var/lib/r503d/state.json`.
+TOFU-paired 128-bit key. The D1 Mini keeps a monotonic counter
+in emulated EEPROM (committed to flash on each write); the daemon keeps a matching counter in `/var/lib/r503d/state.json`.
 Replay attempts (firmware-side `incoming <= last_seen`) get rejected as
 `ERR replay`; tampered frames get `ERR mac_invalid`. Full spec, threat
 model, and known limitations in [`SPEC.md` §13](SPEC.md).
@@ -437,14 +434,14 @@ and
 - Host root compromise (key is in `/var/lib/r503d/key`, `0600 root:root`).
   Root on a running host can unseal the TPM-sealed variant too — sealing
   blunts *offline* attacks, not online ones.
-- Physical attack on the Nano (EEPROM readback ~30 sec with ISP; chip decap; etc.).
-- Firmware-reflash attack (the Arduino bootloader has no signing — but
-  re-pairing requires root on the host, so a reflashed Nano can't be
+- Physical attack on the D1 Mini (flash readback via UART boot mode; chip decap; etc.).
+- Firmware-reflash attack (the ESP8266 bootloader has no signing — but
+  re-pairing requires root on the host, so a reflashed D1 Mini can't be
   brought into trust without host compromise anyway).
 - R503-side compromise (R30x protocol has no auth at all; out of our scope).
 - **Crypto posture.** SipHash-2-4 MACs, 128-bit shared key, 64-bit MAC
   output, domain-separated MAC inputs. Two independent implementations
-  (hand-rolled C++ on the AVR with boot-time KAT self-test; hand-rolled
+  (hand-rolled C++ on the ESP8266 with boot-time KAT self-test; hand-rolled
   Rust on the host, bit-for-bit cross-validated against the third-party
   `siphasher` crate on 1024 random vectors in CI). Host MAC compare uses
   `subtle::ConstantTimeEq`. Wire parsers property-fuzzed on every CI run
@@ -480,7 +477,7 @@ Full threat model with rationale: [`SPEC.md` §13.1](SPEC.md).
   drives off `EnrollStatus` / `VerifyStatus` signals (which are emitted),
   not those polled hints — but a strict client that does
   `Get + PropertiesChanged` will see stale values.
-- **Single Nano = single point of failure.** If the Nano dies, fingerprint
+- **Single D1 Mini = single point of failure.** If it dies, fingerprint
   login is gone until you reflash a spare and re-pair. Keep a password
   auth method enabled as backup.
 - **State.json loss is recoverable in one command.** If `state.json` is lost

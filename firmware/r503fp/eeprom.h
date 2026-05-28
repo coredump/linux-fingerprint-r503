@@ -1,6 +1,16 @@
 // eeprom.h — persistent state for the v2 authenticated channel (SPEC §13.4/§13.5).
 //
-// Layout in the ATmega328P's 1024-byte EEPROM (only the first 192 bytes used):
+// On ESP8266 the EEPROM library emulates a real EEPROM in one flash sector.
+// Callers must call EEPROM.begin(192) once in setup() before any access here,
+// and each write function calls EEPROM.commit() to flush the RAM buffer to
+// flash. EEPROM.write() replaces EEPROM.update() (no per-cell wear concern
+// since flash is only touched on commit, not on each write call).
+//
+// The counter ring's cell-level wear-leveling no longer reduces flash wear
+// (every commit rewrites the whole sector). It is retained for crash-safety:
+// on boot we pick the highest CRC-valid cell, which survives a partial commit.
+//
+// Layout (only the first 192 bytes are used):
 //
 //   [ 0..7]   magic              "R503FPv2"  ─ marks "this Nano is paired"
 //   [   8]   format version     0x02        ─ schema rev; bumps on layout change
@@ -81,24 +91,26 @@ inline bool ee_load_key(uint8_t key_out[16]) {
 
 inline void ee_save_pairing(const uint8_t key[16]) {
   for (uint8_t i = 0; i < EE_MAGIC_LEN; ++i) {
-    EEPROM.update(EE_MAGIC_ADDR + i, EE_MAGIC[i]);
+    EEPROM.write(EE_MAGIC_ADDR + i, EE_MAGIC[i]);
   }
-  EEPROM.update(EE_FMT_ADDR, EE_FORMAT_VERSION);
+  EEPROM.write(EE_FMT_ADDR, EE_FORMAT_VERSION);
   for (uint8_t i = 0; i < EE_KEY_LEN; ++i) {
-    EEPROM.update(EE_KEY_ADDR + i, key[i]);
+    EEPROM.write(EE_KEY_ADDR + i, key[i]);
   }
   // Reset counter ring: every cell to 0xFF so no cell appears valid.
   // First ee_save_counter() will land in cell 0.
   for (uint16_t a = EE_COUNTER_RING_ADDR; a < EE_END_ADDR; ++a) {
-    EEPROM.update(a, 0xFF);
+    EEPROM.write(a, 0xFF);
   }
+  EEPROM.commit();
 }
 
 inline void ee_wipe() {
   // Restore the entire managed region to 0xFF (uninitialized state).
   for (uint16_t a = 0; a < EE_END_ADDR; ++a) {
-    EEPROM.update(a, 0xFF);
+    EEPROM.write(a, 0xFF);
   }
+  EEPROM.commit();
 }
 
 // ---------- counter ring ----------
@@ -154,9 +166,9 @@ inline bool ee_save_counter(uint64_t new_counter) {
   cell[8] = (uint8_t)(crc & 0xff);
   cell[9] = (uint8_t)(crc >> 8);
   for (uint8_t b = 0; b < EE_COUNTER_RING_CELL_SIZE; ++b) {
-    EEPROM.update(addr + b, cell[b]);
+    EEPROM.write(addr + b, cell[b]);
   }
-  return true;
+  return EEPROM.commit();
 }
 
 // ---------- debug introspection (test commands only) ----------

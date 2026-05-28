@@ -1,0 +1,56 @@
+post_install() {
+    systemctl daemon-reload
+    udevadm control --reload && udevadm trigger --subsystem-match=tty
+    # Reload D-Bus bus config so net.reactivated.Fprint is immediately visible.
+    systemctl reload dbus-broker.service 2>/dev/null \
+        || systemctl reload dbus.service 2>/dev/null \
+        || systemctl restart dbus-broker.service 2>/dev/null \
+        || systemctl restart dbus.service
+    # Mask fprintd so it can't race r503d for the bus name.
+    systemctl mask fprintd.service 2>/dev/null || true
+    # Create the state dir. r503d writes key/counter/users here.
+    install -d -m 0700 -o root -g root /var/lib/r503d
+
+    echo ""
+    echo "==> r503d installed."
+    echo ""
+    echo "    Enable and start:"
+    echo "        sudo systemctl enable --now r503d.service"
+    echo ""
+    echo "    First-time pairing with TPM seal (PCR7 = Secure Boot state):"
+    echo "        sudo systemctl stop r503d.service"
+    echo "        sudo mkdir -p /etc/r503d && sudo touch /etc/r503d/allow-pair"
+    echo "        sudo r503d --pair --seal-tpm"
+    echo "        sudo systemctl start r503d.service"
+    echo ""
+    echo "    If Secure Boot state changes and the daemon refuses to start:"
+    echo "        sudo R503_FIRMWARE_DIR=/path/to/repo/firmware \\"
+    echo "             bash /usr/share/r503d/reseal-tpm.sh"
+    echo ""
+}
+
+post_upgrade() {
+    systemctl daemon-reload
+    udevadm control --reload && udevadm trigger --subsystem-match=tty
+    systemctl try-restart r503d.service 2>/dev/null || true
+}
+
+pre_remove() {
+    systemctl disable --now r503d.service 2>/dev/null || true
+}
+
+post_remove() {
+    systemctl daemon-reload
+    udevadm control --reload && udevadm trigger --subsystem-match=tty
+    systemctl unmask fprintd.service 2>/dev/null || true
+    systemctl reload dbus-broker.service 2>/dev/null \
+        || systemctl reload dbus.service 2>/dev/null || true
+
+    echo ""
+    echo "==> r503d removed."
+    echo "    Pairing key, TPM seal, and user mappings are preserved at:"
+    echo "        /var/lib/r503d/"
+    echo "    Remove manually for a clean slate:"
+    echo "        sudo rm -rf /var/lib/r503d /etc/r503d"
+    echo ""
+}

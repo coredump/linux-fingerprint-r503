@@ -698,9 +698,10 @@ impl Device {
                 state.finger_present = false;
                 Ok(())
             }
-            _ => Err(FprintError::NoActionInProgress(
-                "no verify in progress".into(),
-            )),
+            // Action already completed naturally (task cleared it before
+            // emitting the terminal signal). Client calling Stop as cleanup
+            // is correct — succeed silently.
+            _ => Ok(()),
         }
     }
 
@@ -871,9 +872,10 @@ impl Device {
                 state.finger_present = false;
                 Ok(())
             }
-            _ => Err(FprintError::NoActionInProgress(
-                "no enroll in progress".into(),
-            )),
+            // Action already completed naturally (task cleared it before
+            // emitting the terminal signal). Client calling Stop as cleanup
+            // is correct — succeed silently.
+            _ => Ok(()),
         }
     }
 

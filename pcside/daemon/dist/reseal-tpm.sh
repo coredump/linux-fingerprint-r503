@@ -68,7 +68,7 @@ FW_DIR="$REPO_ROOT/firmware"
 
 WIPE_SKETCH="$FW_DIR/r503fp_wipe"
 MAIN_SKETCH="$FW_DIR/r503fp"
-FQBN="${ARDUINO_FQBN:-arduino:avr:nano:cpu=atmega328}"
+FQBN="${ARDUINO_FQBN:-esp8266:esp8266:d1_mini}"
 PORT="${R503_PORT:-/dev/r503}"
 
 # arduino-cli is typically installed in the invoking user's $HOME/.local/bin,
@@ -108,11 +108,11 @@ fi
 # If /dev/r503 isn't there (udev rule not yet installed, or VID/PID outside the
 # rule), fall back to /dev/ttyACM0. The arduino-cli reflash needs a real path.
 if [[ ! -e "$PORT" ]]; then
-    if [[ -e /dev/ttyACM0 ]]; then
-        echo "    /dev/r503 absent; using /dev/ttyACM0"
-        PORT=/dev/ttyACM0
+    if [[ -e /dev/ttyUSB0 ]]; then
+        echo "    /dev/r503 absent; using /dev/ttyUSB0"
+        PORT=/dev/ttyUSB0
     else
-        echo "ERROR: no Nano serial port found (tried $PORT and /dev/ttyACM0)" >&2
+        echo "ERROR: no D1 Mini serial port found (tried $PORT and /dev/ttyUSB0)" >&2
         exit 1
     fi
 fi
@@ -162,4 +162,4 @@ systemctl status r503d.service --no-pager -l | head -15 || true
 
 echo
 echo "DONE. Verify with: fprintd-verify $SUDO_USER"
-echo "(Enrolled fingers were preserved — templates live on the R503 sensor flash, not the Nano.)"
+echo "(Enrolled fingers were preserved — templates live on the R503 sensor flash, not the D1 Mini.)"

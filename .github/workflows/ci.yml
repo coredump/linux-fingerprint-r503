@@ -5,7 +5,7 @@ name: CI
 #  - cargo clippy --all-targets -- -D warnings (lint gate; no warnings land)
 #  - cargo test (unit + lib + cross-impl SipHash + framing fuzz smoke)
 #  - cargo audit (RustSec advisory database check)
-#  - firmware compiles for atmega328 (catches header / API regressions)
+#  - firmware compiles for esp8266:esp8266:d1_mini (catches header / API regressions)
 #
 # The `cargo fuzz` long-corpus runs are NOT wired into this stable-CI flow
 # because libFuzzer requires nightly Rust. Maintainers with a nightly
@@ -69,7 +69,7 @@ jobs:
         run: cargo audit --deny warnings
 
   firmware-build:
-    name: arduino-cli compile (r503fp + r503fp_wipe)
+    name: arduino-cli compile (r503fp + r503fp_wipe) for D1 Mini
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -80,12 +80,15 @@ jobs:
           curl -fsSL https://raw.githubusercontent.com/arduino/arduino-cli/master/install.sh \
             | BINDIR=$HOME/.local/bin sh
           echo "$HOME/.local/bin" >> $GITHUB_PATH
-      - name: Configure arduino-cli (AVR core + Adafruit_Fingerprint lib)
+      - name: Configure arduino-cli (ESP8266 core + required libs)
         run: |
+          arduino-cli config add board_manager.additional_urls \
+            https://arduino.esp8266.com/stable/package_esp8266com_index.json
           arduino-cli core update-index
-          arduino-cli core install arduino:avr
+          arduino-cli core install esp8266:esp8266
           arduino-cli lib install "Adafruit Fingerprint Sensor Library"
+          arduino-cli lib install "EspSoftwareSerial"
       - name: Compile firmware/r503fp
-        run: arduino-cli compile --fqbn arduino:avr:nano:cpu=atmega328 firmware/r503fp
+        run: arduino-cli compile --fqbn esp8266:esp8266:d1_mini firmware/r503fp
       - name: Compile firmware/r503fp_wipe
-        run: arduino-cli compile --fqbn arduino:avr:nano:cpu=atmega328 firmware/r503fp_wipe
+        run: arduino-cli compile --fqbn esp8266:esp8266:d1_mini firmware/r503fp_wipe

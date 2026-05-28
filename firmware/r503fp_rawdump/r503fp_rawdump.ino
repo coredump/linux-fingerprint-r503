@@ -9,10 +9,13 @@
 
 #include <SoftwareSerial.h>
 
+#define LED_ON  LOW
+#define LED_OFF HIGH
+
 const long PC_BAUD = 115200;
 const long FP_BAUD = 57600;
-const uint8_t PIN_RX = 2;
-const uint8_t PIN_TX = 3;
+const uint8_t PIN_RX = 14; // GPIO14 = D5
+const uint8_t PIN_TX = 12; // GPIO12 = D6
 
 SoftwareSerial sensorSerial(PIN_RX, PIN_TX);
 
@@ -60,14 +63,14 @@ bool gotAnything = false;
 void loop() {
   while (sensorSerial.available()) {
     int b = sensorSerial.read();
-    digitalWrite(LED_BUILTIN, HIGH);
+    digitalWrite(LED_BUILTIN, LED_ON);
     if (b < 0x10) Serial.print('0');
     Serial.print(b, HEX);
     Serial.print(' ');
     lastByte = millis();
     gotAnything = true;
   }
-  digitalWrite(LED_BUILTIN, LOW);
+  digitalWrite(LED_BUILTIN, LED_OFF);
 
   // After 3s of silence, declare a verdict.
   static bool reported = false;

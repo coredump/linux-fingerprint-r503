@@ -12,11 +12,16 @@
 #include "framing.h"
 #include "eeprom.h"
 
+// D1 Mini has an active-LOW LED_BUILTIN (GPIO2). Use these macros everywhere
+// so the intent (LED on / off) is clear regardless of polarity.
+#define LED_ON  LOW
+#define LED_OFF HIGH
+
 const long PC_BAUD = 115200;
 const long FP_BAUD = 57600;
-const uint8_t PIN_RX = 2;
-const uint8_t PIN_TX = 3;
-const uint8_t PIN_WAKE = 4;
+const uint8_t PIN_RX  = 14; // GPIO14 = D5 (sensor TX → MCU RX)
+const uint8_t PIN_TX  = 12; // GPIO12 = D6 (MCU TX → sensor RX)
+const uint8_t PIN_WAKE = 4; // GPIO4  = D2
 
 SoftwareSerial sensorSerial(PIN_RX, PIN_TX);
 Adafruit_Fingerprint finger(&sensorSerial);
@@ -113,6 +118,7 @@ uint8_t waitForFingerCapture(uint16_t timeoutMs) {
   unsigned long deadline = millis() + timeoutMs;
   uint8_t p;
   while (millis() < deadline) {
+    yield();
     p = finger.getImage();
     if (p == FINGERPRINT_OK) return FINGERPRINT_OK;
     if (p == FINGERPRINT_NOFINGER) { delay(50); continue; }
@@ -124,6 +130,7 @@ uint8_t waitForFingerCapture(uint16_t timeoutMs) {
 uint8_t waitForFingerRemoval(uint16_t timeoutMs) {
   unsigned long deadline = millis() + timeoutMs;
   while (millis() < deadline) {
+    yield();
     if (finger.getImage() == FINGERPRINT_NOFINGER) return FINGERPRINT_OK;
     delay(50);
   }
@@ -410,14 +417,16 @@ void setup() {
   Serial.begin(PC_BAUD);
   while (!Serial) { ; }
   delay(500);
+  EEPROM.begin(192);
 
   if (!siphash_kat_ok()) {
     Serial.println(F("FATAL siphash_kat_fail — refusing to enter main loop"));
     // Strobe ~6 Hz forever. Distinct from r503fp_wipe's 2.5 Hz slow blink
     // and from normal idle (LED off). Visible as "fast pulse" at a glance.
     while (1) {
-      digitalWrite(LED_BUILTIN, HIGH); delay(80);
-      digitalWrite(LED_BUILTIN, LOW);  delay(80);
+      yield();
+      digitalWrite(LED_BUILTIN, LED_ON);  delay(80);
+      digitalWrite(LED_BUILTIN, LED_OFF); delay(80);
     }
   }
 
@@ -432,9 +441,9 @@ void loop() {
     char c = (char)Serial.read();
     if (c == '\n' || c == '\r') {
       if (inbuf.length() > 0) {
-        digitalWrite(LED_BUILTIN, HIGH);
+        digitalWrite(LED_BUILTIN, LED_ON);
         process_line(inbuf);
-        digitalWrite(LED_BUILTIN, LOW);
+        digitalWrite(LED_BUILTIN, LED_OFF);
         inbuf = "";
       }
     } else {

@@ -7,10 +7,13 @@
 #include <SoftwareSerial.h>
 #include <Adafruit_Fingerprint.h>
 
+#define LED_ON  LOW
+#define LED_OFF HIGH
+
 const long PC_BAUD = 115200;
-const uint8_t PIN_RX = 2;
-const uint8_t PIN_TX = 3;
-const uint8_t PIN_WAKE = 4;
+const uint8_t PIN_RX  = 14; // GPIO14 = D5
+const uint8_t PIN_TX  = 12; // GPIO12 = D6
+const uint8_t PIN_WAKE =  4; // GPIO4  = D2
 
 SoftwareSerial sensorSerial(PIN_RX, PIN_TX);
 Adafruit_Fingerprint finger(&sensorSerial);
@@ -29,7 +32,7 @@ void setup() {
 void loop() {
   static int attempt = 0;
   if (attempt >= 10) {
-    digitalWrite(LED_BUILTIN, LOW);
+    digitalWrite(LED_BUILTIN, LED_OFF);
     return;
   }
   attempt++;
@@ -39,9 +42,9 @@ void loop() {
   Serial.print(F(" wake="));
   Serial.print(wake);
   Serial.print(F(" -> "));
-  digitalWrite(LED_BUILTIN, HIGH);
+  digitalWrite(LED_BUILTIN, LED_ON);
   bool ok = finger.verifyPassword();
-  digitalWrite(LED_BUILTIN, LOW);
+  digitalWrite(LED_BUILTIN, LED_OFF);
   if (ok) {
     Serial.println(F("PASS — SENSOR ALIVE!"));
     finger.getParameters();

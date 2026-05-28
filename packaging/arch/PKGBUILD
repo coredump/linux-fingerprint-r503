@@ -1,0 +1,94 @@
+# Maintainer: J Eufrasio <jose.junior@gmail.com>
+#
+# In-tree PKGBUILD — builds directly from the local checkout.
+# Run from the repo root or from this directory:
+#
+#   cd packaging/arch && makepkg -si
+#
+# This is NOT AUR-submittable as-is (source= is empty; build pulls from
+# $startdir). To publish on AUR, swap source=() for:
+#   source=("git+https://github.com/matpb/linux-fingerprint-r503.git#tag=v$pkgver")
+# and replace $startdir refs with $srcdir/linux-fingerprint-r503.
+
+pkgname=r503d
+pkgver=1.0.0
+pkgrel=1
+pkgdesc="fprintd-replacement daemon for the R503 fingerprint reader over USB-serial (SPEC §13 authenticated wire protocol)"
+arch=('x86_64')
+url="https://github.com/matpb/linux-fingerprint-r503"
+license=('MIT')
+depends=('tpm2-tss' 'dbus' 'polkit' 'systemd')
+makedepends=('rust' 'cargo' 'pkgconf' 'clang')
+provides=('fprintd')
+# /etc/dbus-1/system.d/net.reactivated.Fprint.conf is generated (not hand-
+# edited), but it lives in /etc so pacman expects it in backup=().
+backup=('etc/dbus-1/system.d/net.reactivated.Fprint.conf')
+install=r503d.install
+source=()
+sha256sums=()
+
+_daemon="$startdir/../../pcside/daemon"
+_dist="$_daemon/dist"
+_repo="$startdir/../.."
+
+build() {
+    cd "$_daemon"
+    cargo build --release --locked
+}
+
+check() {
+    cd "$_daemon"
+    cargo test --release --locked
+}
+
+package() {
+    # Binary
+    install -Dm755 "$_daemon/target/release/r503d"                  \
+        "$pkgdir/usr/bin/r503d"
+
+    # systemd unit — into /usr/lib (package-owned), not /etc (admin override)
+    install -Dm644 "$_dist/r503d.service"                            \
+        "$pkgdir/usr/lib/systemd/system/r503d.service"
+
+    # udev rule — /usr/lib not /etc
+    install -Dm644 "$_dist/70-r503.rules"                            \
+        "$pkgdir/usr/lib/udev/rules.d/70-r503.rules"
+
+    # D-Bus system-service file — /usr/local/share avoids conflict with fprintd,
+    # which ships the same filename to /usr/share/dbus-1/system-services/.
+    # dbus and dbus-broker both read /usr/local/share/dbus-1/system-services/.
+    install -Dm644 "$_dist/net.reactivated.Fprint.service"           \
+        "$pkgdir/usr/local/share/dbus-1/system-services/net.reactivated.Fprint.service"
+
+    # D-Bus bus policy — /etc/dbus-1/system.d/ is the admin override path and
+    # takes precedence over /usr/share/dbus-1/system.d/ (where fprintd ships).
+    install -Dm644 "$_dist/net.reactivated.Fprint.conf"              \
+        "$pkgdir/etc/dbus-1/system.d/net.reactivated.Fprint.conf"
+
+    # Polkit action
+    install -Dm644 "$_dist/net.reactivated.fprint.device.r503d.policy" \
+        "$pkgdir/usr/share/polkit-1/actions/net.reactivated.fprint.device.r503d.policy"
+
+    # Recovery script — shipped for reference; firmware dir must be supplied
+    # via R503_FIRMWARE_DIR env var when run from outside the repo checkout.
+    install -Dm755 "$_dist/reseal-tpm.sh"                            \
+        "$pkgdir/usr/share/r503d/reseal-tpm.sh"
+
+    # Docs
+    install -Dm644 "$_repo/README.md"  "$pkgdir/usr/share/doc/r503d/README.md"
+    install -Dm644 "$_repo/SPEC.md"    "$pkgdir/usr/share/doc/r503d/SPEC.md"
+
+    # Patch /usr/local/bin → /usr/bin in the three files that hardcode it.
+    # Done here (not in source) so dist/install.sh stays unmodified for
+    # non-Arch hosts.
+    sed -i 's|/usr/local/bin/r503d|/usr/bin/r503d|g' \
+        "$pkgdir/usr/lib/systemd/system/r503d.service"                         \
+        "$pkgdir/usr/local/share/dbus-1/system-services/net.reactivated.Fprint.service" \
+        "$pkgdir/usr/share/r503d/reseal-tpm.sh"
+
+    # Patch reseal-tpm.sh to honour R503_FIRMWARE_DIR when the script is
+    # invoked outside the repo checkout (its default computes FW_DIR from
+    # its own location, which is /usr/share/r503d — wrong at runtime).
+    sed -i 's|FW_DIR="\$REPO_ROOT/firmware"|FW_DIR="${R503_FIRMWARE_DIR:-$REPO_ROOT/firmware}"|' \
+        "$pkgdir/usr/share/r503d/reseal-tpm.sh"
+}

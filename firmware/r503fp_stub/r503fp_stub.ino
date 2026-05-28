@@ -10,6 +10,10 @@
 //     proof that command parsing is alive even if the host terminal is silent.
 //   - Lines longer than 128 bytes are dropped with "ERR bad_args overflow".
 
+// D1 Mini has an active-LOW LED_BUILTIN (GPIO2).
+#define LED_ON  LOW
+#define LED_OFF HIGH
+
 const long PC_BAUD = 115200;
 const char BANNER[] = "R503FP READY fw=0.0-stub capacity=0";
 
@@ -28,10 +32,10 @@ void loop() {
     char c = (char)Serial.read();
     if (c == '\n' || c == '\r') {
       if (inbuf.length() > 0) {
-        digitalWrite(LED_BUILTIN, HIGH);
+        digitalWrite(LED_BUILTIN, LED_ON);
         Serial.print("OK echo=");
         Serial.println(inbuf);
-        digitalWrite(LED_BUILTIN, LOW);
+        digitalWrite(LED_BUILTIN, LED_OFF);
         inbuf = "";
       }
     } else {

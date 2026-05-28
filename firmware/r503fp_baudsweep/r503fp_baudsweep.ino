@@ -1,6 +1,6 @@
 // r503fp_baudsweep.ino — try common R503 baud rates and report which works.
 //
-// Sweeps 9600 / 19200 / 38400 / 57600 / 115200 on SoftwareSerial(D2,D3).
+// Sweeps 9600 / 19200 / 38400 / 57600 / 115200 on SoftwareSerial(D5,D6).
 // For each: re-initialize, attempt verifyPassword(), report result over PC link.
 // Stops on first success and remains usable for `info` queries afterwards.
 
@@ -8,8 +8,8 @@
 #include <Adafruit_Fingerprint.h>
 
 const long PC_BAUD = 115200;
-const uint8_t PIN_RX = 2;
-const uint8_t PIN_TX = 3;
+const uint8_t PIN_RX = 14; // GPIO14 = D5
+const uint8_t PIN_TX = 12; // GPIO12 = D6
 
 const long bauds[] = {9600, 19200, 38400, 57600, 115200};
 const int nBauds = sizeof(bauds) / sizeof(bauds[0]);
