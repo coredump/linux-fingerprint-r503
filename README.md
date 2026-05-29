@@ -20,8 +20,6 @@ including what the threat model *doesn't* cover.
 
 ![R503 sensor mounted in a hand-cut wooden enclosure, blue ring glowing](docs/images/hero.jpg)
 
-*wish I had a 3d printer…*
-
 ```
    ┌──────────┐   UART    ┌─────────────┐   USB-CDC   ┌──────────────────┐
    │  Grow    │  57600 8N1│  Arduino    │  /dev/r503  │  r503d daemon    │
@@ -472,11 +470,9 @@ Full threat model with rationale: [`SPEC.md` §13.1](SPEC.md).
   — the action name mirrors upstream fprintd verbatim.
 - **One reader.** The daemon exposes a single Device object on D-Bus.
   Multi-reader setups need an extension to the Manager.
-- **No `PropertiesChanged` emit** for the `finger-present` / `finger-needed`
-  hint properties. Every common fprintd client (PAM, KDE Settings, GNOME)
-  drives off `EnrollStatus` / `VerifyStatus` signals (which are emitted),
-  not those polled hints — but a strict client that does
-  `Get + PropertiesChanged` will see stale values.
+- **`PropertiesChanged` for `finger-present` / `finger-needed`** is emitted
+  as the sensor reports progress, so `fprintd-enroll` / `fprintd-verify`
+  print "Place your finger on the sensor" at the right moments.
 - **Single D1 Mini = single point of failure.** If it dies, fingerprint
   login is gone until you reflash a spare and re-pair. Keep a password
   auth method enabled as backup.
@@ -505,6 +501,39 @@ If the daemon won't start or the sensor never responds, the most common
 fix is the wiring — see [`SPEC.md` §3](SPEC.md), particularly the
 **"no voltage divider"** note in §3.1. There's a more detailed runbook
 in [`docs/TROUBLESHOOTING.md`](docs/TROUBLESHOOTING.md).
+
+---
+
+## This build: WeMos D1 Mini (ESP8266) instead of Arduino Nano
+
+The upstream project targets an **Arduino Nano (ATmega328P)**. This fork was ported
+to a **WeMos D1 Mini (ESP8266MOD)** — a Wi-Fi capable board with a built-in USB-serial
+CH340 and native 3.3 V I/O, which makes it a cleaner fit for the R503:
+
+| | Upstream (Nano) | This fork (D1 Mini) |
+|---|---|---|
+| MCU | ATmega328P (5 V) | ESP8266MOD (3.3 V) |
+| USB-serial chip | CH340 or FTDI | CH340 (on-board) |
+| Voltage shifter required | Yes (R503 is 3.3 V) | No — direct wiring |
+| UART for R503 | Hardware UART (D0/D1) | `EspSoftwareSerial` (D5/D6) |
+| Key storage | EEPROM IC (1 KB) | Emulated EEPROM (SPI flash sector) |
+| Flash | 32 KB | 4 MB |
+| Board identifier | `arduino:avr:nano` | `esp8266:esp8266:d1_mini` |
+
+The firmware change is cosmetic from the daemon's perspective — the framed ASCII
+protocol on the serial line is identical (`SPEC.md` §5/§13). You can swap back to
+a Nano by re-flashing and adjusting the FQBN; no daemon changes needed.
+
+### 3D-printed enclosure
+
+![WeMos D1 Mini + R503 in a 3D-printed case](docs/images/case-d1mini.jpg)
+
+The case in the photo is the
+[**D1 Mini + R503 Finger Print Sensor** enclosure on Printables](https://www.printables.com/model/231736-d1-mini-r503-finger-print-sensor).
+It fits the D1 Mini and R503 back-to-back; the USB cable exits from the side and the
+sensor sits flush in the top opening. Printed on a Bambu Lab H2D in PLA.
+
+---
 
 ## License
 

@@ -43,28 +43,48 @@ fn validate_finger(name: &str, allow_any: bool) -> Result<(), FprintError> {
     }
 }
 
-/// Update the polled `finger-present` / `finger-needed` properties from a
-/// firmware PROGRESS line. Best-effort hint for GUI clients that poll those
-/// properties — we don't emit PropertiesChanged, so transient state is only
-/// observable to actively-polling consumers.
+/// Update `finger-present` / `finger-needed` from a firmware PROGRESS line
+/// and emit `PropertiesChanged` for whichever properties actually flipped.
 ///
 /// Firmware vocabulary (`firmware/r503fp/r503fp.ino`):
 ///   - "place_finger" / "place_again": sensor is waiting for a touch.
-///   - "remove_finger": a capture just succeeded, sensor is waiting for the
-///     finger to be lifted before the next stage (enroll only).
+///   - "remove_finger": capture just succeeded, waiting for finger lift (enroll).
 async fn update_finger_state_from_progress(
     state: &std::sync::Arc<tokio::sync::Mutex<DeviceState>>,
+    emitter: &SignalEmitter<'_>,
     msg: &str,
 ) {
     let low = msg.to_lowercase();
-    let mut s = state.lock().await;
-    if low.contains("place_finger") || low.contains("place_again") {
-        s.finger_needed = true;
-        s.finger_present = false;
-    } else if low.contains("remove_finger") || low.contains("remove finger") {
-        // Capture just finished; finger is still on the sensor until lifted.
-        s.finger_needed = false;
-        s.finger_present = true;
+    let (needed_changed, present_changed) = {
+        let mut s = state.lock().await;
+        let (old_n, old_p) = (s.finger_needed, s.finger_present);
+        if low.contains("place_finger") || low.contains("place_again") {
+            s.finger_needed = true;
+            s.finger_present = false;
+        } else if low.contains("remove_finger") || low.contains("remove finger") {
+            s.finger_needed = false;
+            s.finger_present = true;
+        } else {
+            return;
+        }
+        (s.finger_needed != old_n, s.finger_present != old_p)
+    }; // lock released before emitting
+    if needed_changed || present_changed {
+        if let Ok(iface_ref) = emitter
+            .connection()
+            .object_server()
+            .interface::<_, Device>(DEVICE_PATH)
+            .await
+        {
+            let se = iface_ref.signal_emitter().to_owned();
+            let guard = iface_ref.get().await;
+            if needed_changed {
+                guard.finger_needed_changed(&se).await.ok();
+            }
+            if present_changed {
+                guard.finger_present_changed(&se).await.ok();
+            }
+        }
     }
 }
 
@@ -526,7 +546,8 @@ impl Device {
             let mut state = self.state.lock().await;
             state.finger_needed = true;
             state.finger_present = false;
-        }
+        } // lock released before emitting
+        self.finger_needed_changed(&emitter).await.ok();
         let owned_emitter = emitter.to_owned();
 
         let sensor = self.sensor.clone();
@@ -561,7 +582,7 @@ impl Device {
                     tokio::select! {
                         biased;
                         Some(msg) = prog_rx.recv() => {
-                            update_finger_state_from_progress(&state, &msg).await;
+                            update_finger_state_from_progress(&state, &owned_emitter, &msg).await;
                         }
                         result = &mut verify_fut => break result,
                     }
@@ -656,7 +677,7 @@ impl Device {
                 tokio::select! {
                     _ = &mut drain_deadline => break,
                     msg = prog_rx.recv() => match msg {
-                        Some(m) => update_finger_state_from_progress(&state, &m).await,
+                        Some(m) => update_finger_state_from_progress(&state, &owned_emitter, &m).await,
                         None => break,
                     }
                 }
@@ -763,7 +784,8 @@ impl Device {
             let mut state = self.state.lock().await;
             state.finger_needed = true;
             state.finger_present = false;
-        }
+        } // lock released before emitting
+        self.finger_needed_changed(&emitter).await.ok();
         let owned_emitter = emitter.to_owned();
 
         let sensor = self.sensor.clone();
@@ -785,7 +807,7 @@ impl Device {
                     biased;
                     Some(msg) = prog_rx.recv() => {
                         tracing::debug!(progress = %msg, "enroll progress");
-                        update_finger_state_from_progress(&state, &msg).await;
+                        update_finger_state_from_progress(&state, &owned_emitter, &msg).await;
                         let low = msg.to_lowercase();
                         if low.contains("remove_finger") || low.contains("remove finger") {
                             Device::enroll_status(&owned_emitter, "enroll-stage-passed", false)
@@ -804,7 +826,7 @@ impl Device {
                 tokio::select! {
                     _ = &mut drain_deadline => break,
                     msg = prog_rx.recv() => match msg {
-                        Some(m) => update_finger_state_from_progress(&state, &m).await,
+                        Some(m) => update_finger_state_from_progress(&state, &owned_emitter, &m).await,
                         None => break,
                     }
                 }
@@ -902,8 +924,3 @@ impl Device {
     ) -> zbus::Result<()>;
 }
 
-// NOTE: We currently do NOT emit PropertiesChanged for finger-present /
-// finger-needed. pam_fprintd drives off the VerifyStatus / EnrollStatus
-// signals (and the GUI fprintd consumers that watch finger-present mostly
-// just animate a UI hint). If a frontend turns out to need it, hook the
-// zbus-generated `<name>_changed(&self, emitter)` helpers here.
