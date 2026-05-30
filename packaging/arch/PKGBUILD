@@ -11,7 +11,7 @@
 # and replace $startdir refs with $srcdir/linux-fingerprint-r503.
 
 pkgname=r503d
-pkgver=1.0.0
+pkgver=1.1.0
 pkgrel=1
 pkgdesc="fprintd-replacement daemon for the R503 fingerprint reader over USB-serial (SPEC §13 authenticated wire protocol)"
 arch=('x86_64')
